@@ -3,6 +3,9 @@ import sys
 import signal
 import gi
 import argparse
+from pathlib import Path
+import multiprocessing
+import openGateMqttPython as pyMqtt
 
 gi.require_version("Gst", "1.0")
 gi.require_version("GLib", "2.0")
@@ -26,7 +29,8 @@ DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<-107.0,-128.0,0.0>,\
 
 eos_received = False
 
-# from Qualcomm
+sampleQueue = multiprocessing.Queue()
+# Author Qualcomm
 def create_element(factory_name, name):
     """Create a GStreamer element."""
     element = Gst.ElementFactory.make(factory_name, name)
@@ -34,7 +38,7 @@ def create_element(factory_name, name):
         raise Exception(f"Failed to create {factory_name} named {name}!")
     return element
 
-# from Qualcomm
+# Author Qualcomm
 def link_elements(link_orders, elements):
     """Link elements in the specified orders."""
     for link_order in link_orders:
@@ -46,6 +50,33 @@ def link_elements(link_orders, elements):
                     f"Failed to link element {src.get_name()} with {dest.get_name()}"
                 )
             src = dest
+
+
+# Author Andrew Pegg
+def processSample(queue:multiprocessing.Queue):
+    # process text sample here (no sure of the format yet)
+    # if no objects of interest or empty string return
+    # check if MQTT config exist and if we should create a client
+    while True:
+        text_input = queue.get() # blocks until sample ready
+        if not text_input == '':
+            continue
+        # TODO process text sample here
+        continue
+        # TODO detect objects of interest (DANIIL)
+
+        # TODO DANIIL add your curl stuff for Kubernetes
+
+        # TODO create MQTT 
+        if not os.path.exists("/etc/mqtt_config.txt"):
+            continue
+        url = Path("/etc/mqtt_config.txt").read_text()
+        mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
+        mqttClient.connect()
+        # TODO publish message
+        # mqttClient.publish()
+        mqttClient.disconnect()    
+    return
 
 # Author Andrew Pegg
 def on_new_sample(appsink):
@@ -59,8 +90,8 @@ def on_new_sample(appsink):
         detection_text = buffer.extract_dup(0, buffer.get_size()).decode('utf-8')
         
         print(f"All detections for this frame: {detection_text}")
-        # muti-process here and spawn the MQTT stuff here as a subprocess, no blocking
-        # TODO
+        # submit sample to the muti-process queue
+        sampleQueue.put_nowait(detection_text)
     return Gst.FlowReturn.OK
 
 # Author Andrew Pegg
@@ -136,7 +167,7 @@ def construct_pipeline(pipe):
         "mltflite":     create_element("qtimltflite", "inference"),
         "queue_1":      create_element("queue","queue1"),
         "mlvdetection": create_element("qtimlvdetection", "detection"),
-        "textcapsfilter": create_element("capsfilter","textCapsFilter")
+        "textcapsfilter": create_element("capsfilter","textCapsFilter"),
         "queue_2":        create_element("queue","queue2"),
         "appsink":      create_element("appsink", "appsink")  # appsink for result collection
     }
@@ -217,7 +248,7 @@ def construct_pipeline(pipe):
         "pad-added", on_pad_added, elements["rtph264depay"]
     )
 
-
+# Author Qualcomm
 def quit_mainloop(loop):
     """Quit the mainloop if it is running."""
     if loop.is_running():
@@ -226,7 +257,7 @@ def quit_mainloop(loop):
     else:
         print("Loop is not running!")
 
-
+# Author QualComm
 def bus_call(_, message, loop):
     """Handle bus messages."""
     global eos_received
@@ -245,6 +276,7 @@ def bus_call(_, message, loop):
     return True
 
 
+# Author Qualcomm
 def handle_interrupt_signal(pipe, loop):
     """Handle ctrl+C signal."""
     _, state, _ = pipe.get_state(Gst.CLOCK_TIME_NONE)
@@ -260,6 +292,13 @@ def handle_interrupt_signal(pipe, loop):
         quit_mainloop(loop)
     return GLib.SOURCE_CONTINUE
 
+# Author Andrew Pegg
+def start_worker(queue:multiprocessing.Queue):
+    worker_process = multiprocessing.Process(target=processSample,args=(queue,)) # pass blocking queue to sub process
+    worker_process.daemon = True
+    worker_process.start() # start but dont wait on execution
+
+# Author QualComm
 def is_linux():
     try:
         with open("/etc/os-release") as f:
@@ -273,7 +312,7 @@ def is_linux():
 def main():
     """Main function to set up and run the GStreamer pipeline."""
 
-    # Set the environment
+    # Set the environment (leave for now test with it removed and see if anything breaks)
     if is_linux():
         os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
         os.environ["WAYLAND_DISPLAY"] = "wayland-1"
@@ -314,10 +353,8 @@ def main():
     Gst.deinit()
 
     if eos_received:
-        print("App execution successful")
+        print("AI detection closed")
 
-    # Print all detections for the current frame
-    print(f"All detections for the frame: {detections_list}")
 
     return 0
 
