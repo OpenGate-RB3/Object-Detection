@@ -1,1 +1,5 @@
 venv/
+# ignore intellisense files
+*.pyi
+# ignore shared libraries included
+*.so 
