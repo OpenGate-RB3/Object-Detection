@@ -57,20 +57,24 @@ def processSample(queue:multiprocessing.Queue):
     # process text sample here (no sure of the format yet)
     # if no objects of interest or empty string return
     # check if MQTT config exist and if we should create a client
+    mqttClient = None
+    if os.path.exists("/etc/mqtt_config.txt"):
+        url = Path("/etc/mqtt_config.txt").read_text()
+        mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
+        mqttClient.connect()
     while True:
         text_input = queue.get() # blocks until sample ready
-        if not text_input == '':
+        if text_input == '':
             continue
         # TODO process text sample here
-        continue
+        continue # remove this once sample processing code is ready
         # TODO detect objects of interest (DANIIL)
 
         # TODO DANIIL add your curl stuff for Kubernetes
 
-        # TODO create MQTT 
-        if not os.path.exists("/etc/mqtt_config.txt"):
+        if mqttClient == None:
             continue
-        url = Path("/etc/mqtt_config.txt").read_text()
+        # TODO create topic message for event
         mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
         mqttClient.connect()
         # TODO publish message
