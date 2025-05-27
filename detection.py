@@ -5,7 +5,7 @@ import gi
 import argparse
 from pathlib import Path
 import multiprocessing
-sys.path.append("/opt/openGateExtensions/")
+sys.path.append("/opt/openGateExtensions/") # needed to load package below
 import openGateMqttPython as pyMqtt
 
 gi.require_version("Gst", "1.0")
