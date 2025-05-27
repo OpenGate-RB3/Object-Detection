@@ -20,11 +20,11 @@ returns all detections for each frame as a Python list.
 DEFAULT_RTSP_SRC = "rtsp://127.0.0.1:8553/imagestream" # for right now assume localhost will resolve
 
 # Configurations for Detection (default from Qualcomm)
-DEFAULT_DETECTION_MODEL = "/etc/models/YoloV8N_Detection_Quantized.tflite"
+DEFAULT_DETECTION_MODEL = "/etc/models/yolov8_det.tflite"
 DEFAULT_DETECTION_MODULE = "yolov8"
 DEFAULT_DETECTION_LABELS = "/etc/labels/yolov8n.labels"
-DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<-107.0,-128.0,0.0>,\
-    q-scales=<3.093529462814331,0.00390625,1.0>;"
+DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<-33.0,0.0,0.0>,\
+    q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;"
 
 
 eos_received = False
@@ -62,6 +62,7 @@ def processSample(queue:multiprocessing.Queue):
         url = Path("/etc/mqtt_config.txt").read_text()
         mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
         mqttClient.connect()
+    # may want to do something similar for your stuff Daniil of checking for url for automation
     while True:
         text_input = queue.get() # blocks until sample ready
         if text_input == '':
