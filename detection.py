@@ -77,10 +77,9 @@ def processSample(queue:multiprocessing.Queue):
             continue
         # TODO create topic message for event
         mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
-        mqttClient.connect()
         # TODO publish message
         # mqttClient.publish()
-        mqttClient.disconnect()    
+    mqttClient.disconnect()    
     return
 
 # Author Andrew Pegg
