@@ -19,7 +19,7 @@ returns all detections for each frame as a Python list.
 
 DEFAULT_RTSP_SRC = "rtsp://127.0.0.1:8553/imagestream" # for right now assume localhost will resolve
 
-# Configurations for Detection (default from Qualcomm)
+# Configurations for Detection (May need to be changed for each model configured)
 DEFAULT_DETECTION_MODEL = "/etc/models/yolov8_det.tflite"
 DEFAULT_DETECTION_MODULE = "yolov8"
 DEFAULT_DETECTION_LABELS = "/etc/labels/yolov8n.labels"
@@ -301,6 +301,7 @@ def start_worker(queue:multiprocessing.Queue):
     worker_process = multiprocessing.Process(target=processSample,args=(queue,)) # pass blocking queue to sub process
     worker_process.daemon = True
     worker_process.start() # start but dont wait on execution
+    return worker_process
 
 # Author QualComm
 def is_linux():
@@ -322,7 +323,7 @@ def main():
         os.environ["WAYLAND_DISPLAY"] = "wayland-1"
 
     Gst.init(None)
-
+    worker = start_worker(sampleQueue)
     try:
         pipe = Gst.Pipeline()
         if not pipe:
@@ -355,7 +356,7 @@ def main():
     pipe = None
 
     Gst.deinit()
-
+    worker.terminate() # stop worker process
     if eos_received:
         print("AI detection closed")
 
