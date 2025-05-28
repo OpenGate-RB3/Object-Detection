@@ -323,7 +323,7 @@ def main():
         os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
         os.environ["WAYLAND_DISPLAY"] = "wayland-1"
 
-    Gst.init(None)
+    Gst.init(sys.argv)
     worker = start_worker(sampleQueue)
     try:
         pipe = Gst.Pipeline()
