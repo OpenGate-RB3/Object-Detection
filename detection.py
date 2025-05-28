@@ -222,7 +222,7 @@ def construct_pipeline(pipe):
 
     Gst.util_set_object_arg(elements['textcapsfilter'],'caps','text/x-raw')
 
-    Gst.util_set_object_arg(elements["appsink"], "emit-signals", True)
+    Gst.util_set_object_arg(elements["appsink"], "emit-signals", "true")
     elements["appsink"].connect("new-sample", on_new_sample)
 
     # Add all elements
