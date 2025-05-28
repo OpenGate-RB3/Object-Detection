@@ -18,7 +18,7 @@ TFLite model to identify the object in the scene from the camera stream and
 returns all detections for each frame as a Python list.
 """
 
-DEFAULT_RTSP_SRC = "rtsp://192.168.0.44:8554/imagestream" # for right now assume localhost will resolve
+DEFAULT_RTSP_SRC = "rtsp://192.168.0.44:8554/videostream" # for right now assume localhost will resolve
 
 # Configurations for Detection (May need to be changed for each model configured)
 DEFAULT_DETECTION_MODEL = "/etc/models/yolov8_det.tflite"
@@ -179,7 +179,6 @@ def construct_pipeline(pipe):
 
     # Set element properties
     Gst.util_set_object_arg(elements["rtspsrc"], "location", args.rtsp)
-    Gst.util_set_object_arg(elements["rtspsrc"], "protocols", "tcp")
 
     Gst.util_set_object_arg(
         elements["capsfilter_0"],
