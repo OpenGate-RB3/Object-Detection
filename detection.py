@@ -179,6 +179,7 @@ def construct_pipeline(pipe):
 
     # Set element properties
     Gst.util_set_object_arg(elements["rtspsrc"], "location", args.rtsp)
+    Gst.util_set_object_arg(elements["rtspsrc"], "protocols", "tcp")
 
     Gst.util_set_object_arg(
         elements["capsfilter_0"],
