@@ -18,14 +18,13 @@ TFLite model to identify the object in the scene from the camera stream and
 returns all detections for each frame as a Python list.
 """
 
-DEFAULT_RTSP_SRC = "rtsp://127.0.1.1:8554/videostream" # for right now assume localhost will resolve
 
 # Configurations for Detection (May need to be changed for each model configured)
 DEFAULT_DETECTION_MODEL = "/etc/models/yolov8_det.tflite"
 DEFAULT_DETECTION_MODULE = "yolov8"
-DEFAULT_DETECTION_LABELS = "/etc/labels/yolov8n.labels"
-DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<-33.0,0.0,0.0>,\
-    q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;"
+DEFAULT_DETECTION_LABELS = "/etc/labels/coco_labels.txt"
+DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<33.0,0.0,0.0>,\
+    q-scales=<3.243085384,0.0037704327,1.0>;"
 
 
 eos_received = False
@@ -44,6 +43,7 @@ def processSample(queue:multiprocessing.Queue):
     # may want to do something similar for your stuff Daniil of checking for url for automation
     while True:
         text_input = queue.get() # blocks until sample ready
+        print(text_input)
         if text_input == '':
             continue
         # TODO process text sample here
@@ -100,10 +100,6 @@ def construct_pipeline():
         help=DESCRIPTION,
     )
     parser.add_argument(
-        "--rtsp", type=str, default=DEFAULT_RTSP_SRC,
-        help="RTSP URL"
-    )
-    parser.add_argument(
         "--detection_model", type=str, default=DEFAULT_DETECTION_MODEL,
         help="Path to TfLite Object Detection Model"
     )
@@ -137,14 +133,18 @@ def construct_pipeline():
         print(f"File {detection['labels']} does not exist")
         sys.exit(1)
     pipeline_str = """
-    rtspsrc location=rtsp://127.0.1.1:8554/imagestream ! 
-    rtph264depay ! h264parse ! v4l2h264dec ! video/x-raw,format=NV12 ! 
-    qtimlvconverter ! queue ! qtimltflite delegate=external 
-    external-delegate-path=libQnnTFLiteDelegate.so 
-    external-delegate-options="QNNExternalDelegate,backend_type=htp;" 
-    model=/etc/models/yolov8_det.tflite ! queue ! qtimlvdetection 
-    threshold=75.0 results=10 module=yolov8 labels=/etc/labels/yolov8n.labels 
-    constants="YoloV8,q-offsets=<-33.0,0.0,0.0>,q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;" ! 
+    qtiqmmfsrc name=qmmf ! video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! \
+    tee name=split \
+    split. ! queue ! v4l2h264enc ! mpegtsmux ! udpsink host=127.0.1.1 port=5004 \
+    split. ! queue ! videorate ! video/x-raw,framerate=5/1 ! \
+    qtimlvconverter ! queue ! \
+    qtimltflite delegate=external \
+    external-delegate-path=libQnnTFLiteDelegate.so \
+    external-delegate-options="QNNExternalDelegate,backend_type=htp;" \
+    model=/etc/models/yolov8_det.tflite ! queue ! \
+    qtimlvdetection threshold=70.0 results=5 module=yolov8 \
+    labels=/etc/labels/coco_labels.txt \
+    constants="YoloV8,q-offsets=<33.0,0.0,0.0>,q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;" ! \
     capsfilter caps="text/x-raw" ! queue ! appsink name=appsink emit-signals=true
     """
     pipeline = Gst.parse_launch(pipeline_str)
