@@ -255,7 +255,7 @@ def main():
     pipe.set_state(Gst.State.NULL)
     loop = None
     pipe = None
-
+    sampleQueue.close()
     Gst.deinit()
     worker.terminate() # stop worker process
     if eos_received:
