@@ -221,8 +221,8 @@ def main():
 
     # Set the environment (leave for now test with it removed and see if anything breaks)
     # if is_linux():
-    #     os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
-    #     os.environ["WAYLAND_DISPLAY"] = "wayland-1"
+    os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
+    os.environ["WAYLAND_DISPLAY"] = "wayland-1"
 
     Gst.init(sys.argv)
     worker = start_worker(sampleQueue)
