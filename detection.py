@@ -18,41 +18,18 @@ TFLite model to identify the object in the scene from the camera stream and
 returns all detections for each frame as a Python list.
 """
 
-DEFAULT_RTSP_SRC = "rtsp://127.0.1.1:8554/videostream" # for right now assume localhost will resolve
 
 # Configurations for Detection (May need to be changed for each model configured)
 DEFAULT_DETECTION_MODEL = "/etc/models/yolov8_det.tflite"
 DEFAULT_DETECTION_MODULE = "yolov8"
-DEFAULT_DETECTION_LABELS = "/etc/labels/yolov8n.labels"
-DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<-33.0,0.0,0.0>,\
-    q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;"
+DEFAULT_DETECTION_LABELS = "/etc/labels/coco_labels.txt"
+DEFAULT_DETECTION_CONSTANTS = "YoloV8,q-offsets=<33.0,0.0,0.0>,\
+    q-scales=<3.243085384,0.0037704327,1.0>;"
 
 
 eos_received = False
 
 sampleQueue = multiprocessing.Queue()
-# Author Qualcomm
-def create_element(factory_name, name):
-    """Create a GStreamer element."""
-    element = Gst.ElementFactory.make(factory_name, name)
-    if not element:
-        raise Exception(f"Failed to create {factory_name} named {name}!")
-    return element
-
-# Author Qualcomm
-def link_elements(link_orders, elements):
-    """Link elements in the specified orders."""
-    for link_order in link_orders:
-        src = None
-        for element in link_order:
-            dest = elements[element]
-            if src and not src.link(dest):
-                raise Exception(
-                    f"Failed to link element {src.get_name()} with {dest.get_name()}"
-                )
-            src = dest
-
-
 # Author Andrew Pegg
 def processSample(queue:multiprocessing.Queue):
     # process text sample here (no sure of the format yet)
@@ -66,6 +43,7 @@ def processSample(queue:multiprocessing.Queue):
     # may want to do something similar for your stuff Daniil of checking for url for automation
     while True:
         text_input = queue.get() # blocks until sample ready
+        print(text_input)
         if text_input == '':
             continue
         # TODO process text sample here
@@ -100,7 +78,7 @@ def on_new_sample(appsink):
     return Gst.FlowReturn.OK
 
 # Author Andrew Pegg
-def construct_pipeline(pipe):
+def construct_pipeline():
     """Initialize and link elements for the GStreamer pipeline."""
     # Parse arguments
     parser = argparse.ArgumentParser(
@@ -120,10 +98,6 @@ def construct_pipeline(pipe):
         action="help",
         default=argparse.SUPPRESS,
         help=DESCRIPTION,
-    )
-    parser.add_argument(
-        "--rtsp", type=str, default=DEFAULT_RTSP_SRC,
-        help="RTSP URL"
     )
     parser.add_argument(
         "--detection_model", type=str, default=DEFAULT_DETECTION_MODEL,
@@ -158,101 +132,28 @@ def construct_pipeline(pipe):
     if not os.path.exists(detection["labels"]):
         print(f"File {detection['labels']} does not exist")
         sys.exit(1)
+    pipeline_str = """
+    qtiqmmfsrc name=qmmf ! video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! \
+    tee name=split \
+    split. ! queue ! v4l2h264enc ! mpegtsmux ! udpsink host=127.0.1.1 port=5004 \
+    split. ! queue ! videorate ! video/x-raw,framerate=5/1 ! \
+    qtimlvconverter ! queue ! \
+    qtimltflite delegate=external \
+    external-delegate-path=libQnnTFLiteDelegate.so \
+    external-delegate-options="QNNExternalDelegate,backend_type=htp;" \
+    model=/etc/models/yolov8_det.tflite ! queue ! \
+    qtimlvdetection threshold=70.0 results=5 module=yolov8 \
+    labels=/etc/labels/coco_labels.txt \
+    constants="YoloV8,q-offsets=<33.0,0.0,0.0>,q-scales=<3.2430853843688965,0.0037704326678067446,1.0>;" ! \
+    capsfilter caps="text/x-raw" ! queue ! appsink name=appsink emit-signals=true
+    """
+    pipeline = Gst.parse_launch(pipeline_str)
+    appsink = pipeline.get_by_name("appsink")
+    appsink.connect("new-sample", on_new_sample)
+    return pipeline
 
-    # Create all elements
-    elements = {
-        "rtspsrc":      create_element("rtspsrc", "rtspsrc"),
-        "rtph264depay": create_element("rtph264depay", "rtph264depay"),
-        "capsfilter_0": create_element("capsfilter", "rtph264depaycaps"),
-        "h264parse":    create_element("h264parse", "h264parser"),
-        "v4l2h264dec":  create_element("v4l2h264dec", "v4l2h264decoder"),
-        "deccaps":      create_element("capsfilter", "deccaps"),
-        "mlvconverter": create_element("qtimlvconverter", "converter"), # decode video into tensors for mltflite
-        "queue_0":      create_element("queue","queue0"),
-        "mltflite":     create_element("qtimltflite", "inference"),
-        "queue_1":      create_element("queue","queue1"),
-        "mlvdetection": create_element("qtimlvdetection", "detection"),
-        "textcapsfilter": create_element("capsfilter","textCapsFilter"),
-        "queue_2":        create_element("queue","queue2"),
-        "appsink":      create_element("appsink", "appsink")  # appsink for result collection
-    }
 
-    # Set element properties
-    Gst.util_set_object_arg(elements["rtspsrc"], "location", args.rtsp)
-
-    Gst.util_set_object_arg(
-        elements["capsfilter_0"],
-        "caps",
-        "video/x-h264,colorimetry=bt709",
-    )
-
-    Gst.util_set_object_arg(elements["h264parse"], "config-interval", "1")
-
-    Gst.util_set_object_arg(elements["v4l2h264dec"], "capture-io-mode", "dmabuf")
-    Gst.util_set_object_arg(elements["v4l2h264dec"], "output-io-mode", "dmabuf")
-
-    Gst.util_set_object_arg(
-        elements["deccaps"], "caps", "video/x-raw,format=NV12"
-    )
-
-    Gst.util_set_object_arg(elements["mltflite"], "delegate", "external")
-    Gst.util_set_object_arg(
-        elements["mltflite"],
-        "external-delegate-path",
-        "libQnnTFLiteDelegate.so",
-    )
-    Gst.util_set_object_arg(
-        elements["mltflite"],
-        "external-delegate-options",
-        "QNNExternalDelegate,backend_type=htp,htp_precision=(string)1;",
-    )
-    Gst.util_set_object_arg(elements["mltflite"], "model", detection["model"])
-
-    Gst.util_set_object_arg(elements["mlvdetection"], "threshold", "75.0")
-    Gst.util_set_object_arg(elements["mlvdetection"], "results", "4")
-    Gst.util_set_object_arg(
-        elements["mlvdetection"], "module", detection["module"]
-    )
-    Gst.util_set_object_arg(
-        elements["mlvdetection"], "constants", detection["constants"],
-    )
-    Gst.util_set_object_arg(
-        elements["mlvdetection"], "labels", detection["labels"]
-    )
-
-    Gst.util_set_object_arg(elements['textcapsfilter'],'caps','text/x-raw')
-
-    Gst.util_set_object_arg(elements["appsink"], "emit-signals", "true")
-    elements["appsink"].connect("new-sample", on_new_sample)
-
-    # Add all elements
-    for element in elements.values():
-        pipe.add(element)
-
-    # Link all elements
-    link_orders = [
-        [
-            "rtph264depay", "capsfilter_0", "h264parse", "v4l2h264dec", "deccaps", "mlvconverter",
-            "queue_0","mltflite", "queue_1" ,"mlvdetection",'textcapsfilter', "queue_2" , "appsink"
-        ]
-    ]
-    link_elements(link_orders, elements)
-
-    def on_pad_added(elem, pad, dest):
-        if "rtp" in pad.get_name():
-            sink_pad = dest.get_static_pad("sink")
-            if (
-                not sink_pad.is_linked()
-                and pad.link(sink_pad) != Gst.PadLinkReturn.OK
-            ):
-                raise (
-                    f"Failed to link {elem.get_name()} with {dest.get_name()}!"
-                )
-
-    elements["rtspsrc"].connect(
-        "pad-added", on_pad_added, elements["rtph264depay"]
-    )
-
+  
 # Author Qualcomm
 def quit_mainloop(loop):
     """Quit the mainloop if it is running."""
@@ -320,16 +221,15 @@ def main():
 
     # Set the environment (leave for now test with it removed and see if anything breaks)
     # if is_linux():
-    #     os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
-    #     os.environ["WAYLAND_DISPLAY"] = "wayland-1"
+    os.environ["XDG_RUNTIME_DIR"] = "/dev/socket/weston"
+    os.environ["WAYLAND_DISPLAY"] = "wayland-1"
 
     Gst.init(sys.argv)
     worker = start_worker(sampleQueue)
     try:
-        pipe = Gst.Pipeline()
+        pipe = construct_pipeline()
         if not pipe:
-            raise Exception("Failed to create pipeline!")
-        construct_pipeline(pipe)
+            raise Exception("Failed to create pipeline!")     
     except Exception as e:
         print(f"{e}")
         Gst.deinit()
@@ -355,7 +255,7 @@ def main():
     pipe.set_state(Gst.State.NULL)
     loop = None
     pipe = None
-
+    sampleQueue.close()
     Gst.deinit()
     worker.terminate() # stop worker process
     if eos_received:
