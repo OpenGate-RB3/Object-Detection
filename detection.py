@@ -43,7 +43,6 @@ def processSample(queue:multiprocessing.Queue):
     # may want to do something similar for your stuff Daniil of checking for url for automation
     while True:
         text_input = queue.get() # blocks until sample ready
-        print(text_input)
         if text_input == '':
             continue
         # TODO process text sample here
