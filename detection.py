@@ -155,7 +155,7 @@ def construct_pipeline():
 qtiqmmfsrc name=qmmf !
 video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 !
 tee name=split
-split. ! queue ! v4l2h264enc ! mpegtsmux ! udpsink host=192.168.0.44 port=5004
+split. ! queue ! v4l2h264enc ! h264parse ! mpegtsmux ! udpsink host=192.168.0.44 port=5004
 split. ! queue ! qtimlvconverter ! queue !
 qtimltflite delegate=external external-delegate-path=libQnnTFLiteDelegate.so external-delegate-options="QNNExternalDelegate,backend_type=htp;" model=/etc/models/yolov8_det.tflite ! queue !
 qtimlvdetection threshold=60.0 results=5 module=yolov8 labels=/etc/labels/coco_labels.txt constants="YoloV8,q-offsets=<33.0,0.0,0.0>,q-scales=<3.243085384,0.0037704327,1.0>;" !
