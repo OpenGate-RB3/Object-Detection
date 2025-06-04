@@ -92,7 +92,6 @@ def on_new_sample(appsink):
         # Extract all detection results for this frame
         detection_text = buffer.extract_dup(0, buffer.get_size()).decode('utf-8')
 
-        print(f"All detections for this frame: {detection_text}")
         # submit sample to the muti-process queue
         sampleQueue.put_nowait(detection_text)
     return Gst.FlowReturn.OK
