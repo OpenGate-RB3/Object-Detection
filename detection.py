@@ -11,6 +11,7 @@ import openGateMqttPython as pyMqtt
 gi.require_version("Gst", "1.0")
 gi.require_version("GLib", "2.0")
 from gi.repository import Gst, GLib
+import re
 
 DESCRIPTION = """
 The application receives an RTSP stream as source, decodes it, uses YOLOv8
@@ -40,23 +41,43 @@ def processSample(queue:multiprocessing.Queue):
         url = Path("/etc/mqtt_config.txt").read_text()
         mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
         mqttClient.connect()
-    # may want to do something similar for your stuff Daniil of checking for url for automation
+    # define parsing regex
+    labels = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+    "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+    "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+    "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+    "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake",
+    "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop",
+    "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
+    "toothbrush"
+    ]
+    empty_pattern = r'bounding-boxes=\(int\)<\s*>'
+    label_pattern = "|".join(re.escape(label) for label in sorted(labels, key=lambda x: -len(x)))
+    label_regex  = rf'"({label_pattern}), id='
+    confidence_regex = r'confidence=\(double\)([\d.]+)'
     while True:
-        text_input = queue.get() # blocks until sample ready
-        if text_input == '':
+        try:
+            text_input = queue.get() # blocks until sample ready
+            if text_input == None:
+                break
+            if not isinstance(text_input,str):
+                continue
+        except Exception as e:
+            break
+        text_input = text_input.replace('\\','')
+        is_empty = bool(re.search(empty_pattern,text_input))
+        if is_empty:
             continue
-        # TODO process text sample here
-        continue # remove this once sample processing code is ready
-        # TODO detect objects of interest (DANIIL)
-
-        # TODO DANIIL add your curl stuff for Kubernetes
-
+        found_labels  = re.findall(label_regex , text_input)
+        found_confidences = re.findall(confidence_regex, text_input)
+        label_conf_pairs = list(zip(found_labels, map(float, found_confidences)))
         if mqttClient == None:
             continue
-        # TODO create topic message for event
-        mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
-        # TODO publish message
-        # mqttClient.publish()
+        mqttClient.publish("detections", str(label_conf_pairs))
     mqttClient.disconnect()    
     return
 
@@ -70,7 +91,7 @@ def on_new_sample(appsink):
         
         # Extract all detection results for this frame
         detection_text = buffer.extract_dup(0, buffer.get_size()).decode('utf-8')
-        
+
         print(f"All detections for this frame: {detection_text}")
         # submit sample to the muti-process queue
         sampleQueue.put_nowait(detection_text)
@@ -138,7 +159,7 @@ tee name=split
 split. ! queue ! v4l2h264enc ! mpegtsmux ! udpsink host=192.168.0.44 port=5004
 split. ! queue ! qtimlvconverter ! queue !
 qtimltflite delegate=external external-delegate-path=libQnnTFLiteDelegate.so external-delegate-options="QNNExternalDelegate,backend_type=htp;" model=/etc/models/yolov8_det.tflite ! queue !
-qtimlvdetection threshold=65.0 results=2 module=yolov8 labels=/etc/labels/coco_labels.txt constants="YoloV8,q-offsets=<33.0,0.0,0.0>,q-scales=<3.243085384,0.0037704327,1.0>;" !
+qtimlvdetection threshold=60.0 results=5 module=yolov8 labels=/etc/labels/coco_labels.txt constants="YoloV8,q-offsets=<33.0,0.0,0.0>,q-scales=<3.243085384,0.0037704327,1.0>;" !
 text/x-raw ! queue !
 appsink name=appsink emit-signals=true drop=true max-buffers=1 sync=false
     """
@@ -251,9 +272,10 @@ def main():
     pipe.set_state(Gst.State.NULL)
     loop = None
     pipe = None
+    sampleQueue.put(None)
     sampleQueue.close()
     Gst.deinit()
-    worker.terminate() # stop worker process
+    worker.join() # stop worker process
     if eos_received:
         print("AI detection closed")
 
