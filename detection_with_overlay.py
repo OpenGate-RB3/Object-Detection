@@ -12,6 +12,7 @@ gi.require_version("Gst", "1.0")
 gi.require_version("GLib", "2.0")
 from gi.repository import Gst, GLib
 import re
+import json
 
 DESCRIPTION = """
 The application receives an RTSP stream as source, decodes it, uses YOLOv8
@@ -38,9 +39,12 @@ def processSample(queue:multiprocessing.Queue):
     # check if MQTT config exist and if we should create a client
     mqttClient = None
     if os.path.exists("/etc/mqtt_config.txt"):
-        url = Path("/etc/mqtt_config.txt").read_text()
-        mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
-        mqttClient.connect()
+        try:
+            url = Path("/etc/mqtt_config.txt").read_text()
+            mqttClient = pyMqtt.MQTTClient(url,"openGateClient")
+            mqttClient.connect()
+        except:
+            mqttClient = None
     # define parsing regex
     labels = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -77,7 +81,7 @@ def processSample(queue:multiprocessing.Queue):
         label_conf_pairs = list(zip(found_labels, map(float, found_confidences)))
         if mqttClient == None:
             continue
-        mqttClient.publish("detections", str(label_conf_pairs))
+        mqttClient.publish("detections", json.dumps(label_conf_pairs))
     mqttClient.disconnect()    
     return
 
